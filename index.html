@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>J.A.R.V.I.S.</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at center, #0f2027 0%, #090d16 100%);
+      color: #00e5ff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      text-align: center;
+      padding: 16px;
+      border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+      letter-spacing: 3px;
+      font-weight: bold;
+      font-size: 18px;
+      text-shadow: 0 0 10px rgba(0, 229, 255, 0.6);
+    }
+    #chatBox {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg {
+      max-width: 82%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 15px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+    .user {
+      align-self: flex-end;
+      background: rgba(0, 229, 255, 0.15);
+      border: 1px solid rgba(0, 229, 255, 0.4);
+      color: #ffffff;
+    }
+    .jarvis {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      color: #b2ebf2;
+    }
+    .controls {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border-top: 1px solid rgba(0, 229, 255, 0.15);
+    }
+    #status {
+      font-size: 13px;
+      color: #80deea;
+      height: 18px;
+    }
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    button {
+      border: none;
+      border-radius: 50px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    #talkBtn {
+      background: #00e5ff;
+      color: #090d16;
+      padding: 18px 36px;
+      font-size: 17px;
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
+    }
+    #talkBtn.listening {
+      background: #ff3d00;
+      color: #ffffff;
+      box-shadow: 0 0 25px rgba(255, 61, 0, 0.7);
+      animation: pulse 1.2s infinite;
+    }
+    #stopBtn {
+      background: rgba(255, 255, 255, 0.1);
+      color: #00e5ff;
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      padding: 16px 20px;
+      font-size: 14px;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>J.A.R.V.I.S. SYSTEM</header>
+
+  <div id="chatBox">
+    <div class="msg jarvis">ระบบออนไลน์แล้วครับท่าน มีอะไรให้ผมรับใช้ไหมครับ</div>
+  </div>
+
+  <div class="controls">
+    <div id="status">แตะปุ่มด้านล่างเพื่อเริ่มพูด</div>
+    <div class="btn-group">
+      <button id="talkBtn">🎙️ แตะเพื่อพูด</button>
+      <button id="stopBtn">⏹️ หยุด</button>
+    </div>
+  </div>
+
+  <script>
+    // 1. ใส่ API KEY ของคุณตรงนี้ (ห้ามลบเครื่องหมายคำพูด "")
+    const API_KEY = "AQ.Ab8RN6J4rB9_wIcXKAInoARk29cFTMK7uIAp2dsPypvlyAuGbw";
+
+    // 2. กำหนดบุคลิกของจาร์วิส
+    const SYSTEM_PROMPT = "คุณคือจาร์วิส (J.A.R.V.I.S.) ผู้ช่วยอัจฉริยะส่วนตัว ตอบคำถามอย่างสุภาพ ฉลาด กระชับ ตรงประเด็น และมีไหวพริบ เรียกผู้ใช้ว่า 'ครับท่าน' ห้ามใช้สัญลักษณ์ Markdown เช่น ดอกจัน แฮชแท็ก หรืออีโมจิ ในคำตอบเด็ดขาด เพราะระบบจะนำข้อความไปอ่านออกเสียง";
+
+    const talkBtn = document.getElementById("talkBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusText = document.getElementById("status");
+    const chatBox = document.getElementById("chatBox");
+
+    // เก็บประวัติการคุยเพื่อให้จำเรื่องก่อนหน้าได้
+    let chatHistory = [];
+
+    // ตั้งค่าระบบรับเสียง (STT)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = "th-TH";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        talkBtn.classList.add("listening");
+        talkBtn.innerText = "🛑 กำลังฟัง...";
+        statusText.innerText = "พูดคำสั่งได้เลยครับท่าน...";
+      };
+
+      recognition.onend = () => {
+        talkBtn.classList.remove("listening");
+        talkBtn.innerText = "🎙️ แตะเพื่อพูด";
+      };
+
+      recognition.onerror = (event) => {
+        talkBtn.classList.remove("listening");
+        talkBtn.innerText = "🎙️ แตะเพื่อพูด";
+        statusText.innerText = "เกิดข้อผิดพลาดในการรับเสียง: " + event.error;
+      };
+
+      recognition.onresult = async (event) => {
+        const userText = event.results[0][0].transcript;
+        addMessage(userText, "user");
+        statusText.innerText = "กำลังประมวลผล...";
+
+        const reply = await askJarvis(userText);
+        addMessage(reply, "jarvis");
+        statusText.innerText = "กำลังตอบกลับ...";
+        speak(reply);
+      };
+    } else {
+      statusText.innerText = "เบราว์เซอร์นี้ไม่รองรับการสั่งงานด้วยเสียง กรุณาใช้ Chrome";
+    }
+
+    talkBtn.onclick = () => {
+      window.speechSynthesis.cancel(); // หยุดเสียงพูดเก่าทันทีที่กดพูดใหม่
+      try {
+        recognition.start();
+      } catch (e) {
+        recognition.stop();
+      }
+    };
+
+    stopBtn.onclick = () => {
+      window.speechSynthesis.cancel();
+      if (recognition) recognition.stop();
+      statusText.innerText = "หยุดการทำงานแล้วครับท่าน";
+    };
+
+    function addMessage(text, sender) {
+      const div = document.createElement("div");
+      div.className = `msg ${sender}`;
+      div.innerText = text;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function askJarvis(userText) {
+      // เพิ่มข้อความผู้ใช้ลงในประวัติ
+      chatHistory.push({ role: "user", parts: [{ text: userText }] });
+
+      // จำกัดประวัติไว้ 10 รอบล่าสุดเพื่อไม่ให้ช้าหรือเปลืองโควตา
+      if (chatHistory.length > 20) {
+        chatHistory = chatHistory.slice(chatHistory.length - 20);
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: chatHistory
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+          return "ระบบขัดข้องครับท่าน: " + data.error.message;
+        }
+
+        const rawReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัยครับ ผมไม่เข้าใจคำสั่ง";
+        // ลบสัญลักษณ์ * หรือ # เผื่อ AI เผลอใส่มา
+        const cleanReply = rawReply.replace(/[*#_`~]/g, "").trim();
+
+        // บันทึกคำตอบของ AI ลงประวัติ
+        chatHistory.push({ role: "model", parts: [{ text: cleanReply }] });
+        return cleanReply;
+
+      } catch (err) {
+        return "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ในขณะนี้ครับท่าน";
+      }
+    }
+
+    function speak(text) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "th-TH";
+      utterance.rate = 1.05; // ความเร็วเสียงพูด
+      utterance.pitch = 0.95; // โทนเสียงทุ้มลงเล็กน้อย
+
+      utterance.onend = () => {
+        statusText.innerText = "พร้อมรับคำสั่งต่อไปครับท่าน";
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+  </script>
+</body>
+</html>
